@@ -1,3 +1,5 @@
+print(" MathematicalProgram Tutorial : ")
+
 " Initialize a MathematicalProgram object : "
 # To initialize this class, first create an empty MathematicalProgram as
 print("\n==========================\n")
