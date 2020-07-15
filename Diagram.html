@@ -1,0 +1,166 @@
+
+<div style='height:400px;' id='myDiagramDiv' ></div>
+<script src="https://unpkg.com/gojs/release/go.js"></script>
+<script>
+  $ = go.GraphObject.make
+  var diagram = $(go.Diagram, "myDiagramDiv", {
+    "undoManager.isEnabled": true
+  });
+  diagram.layout = $(go.LayeredDigraphLayout, {
+    layerSpacing: 20,
+    columnSpacing: 20,
+    isRealtime: false
+  });
+
+  diagram.groupTemplate = $(
+    go.Group,
+    "Auto",
+    { layout: $(go.LayeredDigraphLayout, { direction: 0, columnSpacing: 10 }) },
+    new go.Binding("isSubGraphExpanded", "expanded"),
+    $(
+      go.Shape,
+      "RoundedRectangle", // surrounds everything
+      { parameter1: 10, fill: "rgba(128,128,128,0.33)" }
+    ),
+    $(
+      go.Panel,
+      "Vertical", // position header above the subgraph
+      { defaultAlignment: go.Spot.Left },
+      $(
+        go.Panel,
+        "Horizontal", // the header
+        { defaultAlignment: go.Spot.Top },
+        $("SubGraphExpanderButton"), // this Panel acts as a Button
+        $(
+          go.TextBlock, // group title near top, next to button
+          { font: "Bold 12pt Sans-Serif" },
+          new go.Binding("text", "name")
+        )
+      ),
+      $(
+        go.Placeholder, // represents area for all member parts
+        { padding: new go.Margin(0, 10), background: "white" }
+      )
+    )
+  );
+  var systemTemplate = $(
+    go.Node,
+    "Auto",
+    $(go.Shape, "RoundedRectangle", {
+      parameter1: 10,
+      fill: "rgba(128,128,228,0.33)"
+    }),
+    $(
+      go.Panel,
+      "Table",
+      { margin: 10 },
+      $(
+        go.TextBlock,
+        { row: 0, column: 0, columnSpan: 2, alignment: go.Spot.Center },
+        { font: "bold 12pt sans-serif" },
+        new go.Binding("text", "key")
+      ),
+      $(go.RowColumnDefinition, {
+        row: 1,
+        separatorStrokeWidth: 1.5,
+        separatorStroke: "black"
+      }),
+      $(go.TextBlock, {
+        // add a spacer
+        row: 1,
+        column: 0,
+        columnSpan: 2,
+        height: 10
+      }),
+      $(
+        go.Panel,
+        "Vertical",
+        { name: "INPUT_PORTS" },
+        new go.Binding("itemArray", "input_ports"),
+        {
+          row: 2,
+          column: 0,
+          alignment: go.Spot.Left,
+          itemTemplate: $(
+            go.Panel,
+            "Auto",
+            { margin: 2 },
+            $(go.Shape, "RoundedRectangle", { fill: "lightcyan" }),
+            $(go.TextBlock, new go.Binding("text", "name"), {
+              margin: 2
+            }),
+            new go.Binding("portId", "id")
+          ) // end of itemTemplate
+        }
+      ),
+      $(
+        go.Panel,
+        "Vertical",
+        { name: "OUTPUT_PORTS" },
+        new go.Binding("itemArray", "output_ports"),
+        {
+          row: 2,
+          column: 1,
+          alignment: go.Spot.Right,
+          itemTemplate: $(
+            go.Panel,
+            "Auto",
+            { margin: 2 },
+            $(go.Shape, "RoundedRectangle", { fill: "lightcyan" }),
+            $(go.TextBlock, new go.Binding("text", "name"), {
+              margin: 2
+            }),
+            new go.Binding("portId", "id")
+          ) // end of itemTemplate
+        }
+      )
+    )
+  );
+
+  var portTemplate = $(
+    go.Node,
+    "Auto",
+    $(go.Shape, "RoundedRectangle", {
+      parameter1: 10,
+      fill: "honeydew"
+    }),
+    $(
+      go.TextBlock,
+      { row: 0, column: 0, columnSpan: 2, alignment: go.Spot.Right },
+      new go.Binding("text", "name")
+    )
+  );
+
+  var templmap = new go.Map();
+  templmap.add("", systemTemplate);
+  templmap.add("input_port", portTemplate);
+  templmap.add("output_port", portTemplate);
+  diagram.nodeTemplateMap = templmap;
+
+  diagram.model = $(go.GraphLinksModel, {
+    linkFromPortIdProperty: "fromPort", // required information:
+    linkToPortIdProperty: "toPort", // identifies data property names
+    nodeDataArray: [
+{ key: "diagram", name: "diagram", group: "", isGroup: true, expanded: true, },
+{ key: "diagram_inputs", name: "Input Ports", group: "diagram", isGroup: true, },
+{ key: "diagram_u0", name: "controller_desired_state", group: "diagram_inputs", category: "input_port", },
+{ key: "pendulum", group: "diagram", input_ports: [ { name: "tau", id: "u0" }, ],
+output_ports: [ { name: "state", id: "y0" }, ],
+},
+{ key: "controller", group: "diagram", input_ports: [ { name: "estimated_state", id: "u0" }, { name: "desired_state", id: "u1" }, ],
+output_ports: [ { name: "control", id: "y0" }, ],
+},
+{ key: "logger", group: "diagram", input_ports: [ { name: "data", id: "u0" }, ],
+output_ports: [ ],
+},
+
+    ],
+    linkDataArray: [
+{ from: "pendulum", fromPort: "y0", to: "controller", toPort: "u0", },
+{ from: "controller", fromPort: "y0", to: "pendulum", toPort: "u0", },
+{ from: "pendulum", fromPort: "y0", to: "logger", toPort: "u0", },
+{ from: "diagram_u0", to: "controller", toPort: "u1", },
+
+    ]
+  });
+</script>
