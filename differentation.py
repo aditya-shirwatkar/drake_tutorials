@@ -19,11 +19,13 @@ subject to x(0) + x(1) = 1
 
 from pydrake.all import eq, MathematicalProgram, Solve, Variable
 from pydrake.common.containers import namedview
+from pydrake.autodiffutils import AutoDiffXd
 import numpy as np
-from numpy import sin 
-from numpy import cos 
+# from numpy import sin 
+# from numpy import cos 
 
 import pydrake.math as pymath
+
 
 State = namedview("q",
 		["q1", "q2", "q3", "q4", "q5"])
@@ -34,7 +36,7 @@ class Model(MathematicalProgram):
 	def __init__(self):
 		super().__init__()
 
-		self.N = 3; self.T = 1.
+		self.N = 40; self.T = 1.
 		self.num_steps = 2
 		self.step_max = 0.25; self.tauMax = 1.5
 		self.pi = np.pi; 
@@ -57,7 +59,7 @@ class Model(MathematicalProgram):
 
 		# self.ComputeTransformations()
 
-		self.AddConstraints()
+		self.SetConstraints()
 
 		# # Set up the optimization problem.
 		# self.state = self.prog.NewContinuousVariables(14, 'state')
@@ -70,19 +72,19 @@ class Model(MathematicalProgram):
 		self.u = self.prog.NewContinuousVariables(4, self.N,'u')
 		self.dx = self.prog.NewContinuousVariables(5, self.N, 'dx')
 		self.x = self.prog.NewContinuousVariables(5, self.N, 'x')
-		self.left_foot= self.prog.NewContinuousVariables(2, self.N, 'left_tip')
-		self.foot_contacts = self.prog.NewBinaryVariables(2, self.N, 'foot_contacts')
+		# self.left_foot= self.prog.NewContinuousVariables(2, self.N, 'left_tip')
+		# self.foot_contacts = self.prog.NewBinaryVariables(2, self.N, 'foot_contacts')
 		# self.right_foot_contact = self.prog.NewBinaryVariables(1, self.N, 'right_contact')
 
 	def ComputeTransformations(self):
 		self.world_frame = np.array([0, 0]).reshape(2, 1)
 		self.T01 = []; self.T12 = []; self.T23 = []; self.T24 = []; self.T45 = []
 		for n in range(self.N):
-			s1, c1 = pymath.sin(self.x[0, n]), pymath.cos(self.x[0, n]) 
-			s2, c2 = pymath.sin(self.x[1, n]), pymath.cos(self.x[1, n]) 
-			s3, c3 = pymath.sin(self.x[2, n]), pymath.cos(self.x[2, n]) 
-			s4, c4 = pymath.sin(self.x[3, n]), pymath.cos(self.x[3, n]) 
-			s5, c5 = pymath.sin(self.x[4, n]), pymath.cos(self.x[4, n]) 
+			s1, c1 = np.sin(self.x[0, n]), np.cos(self.x[0, n]) 
+			s2, c2 = np.sin(self.x[1, n]), np.cos(self.x[1, n]) 
+			s3, c3 = np.sin(self.x[2, n]), np.cos(self.x[2, n]) 
+			s4, c4 = np.sin(self.x[3, n]), np.cos(self.x[3, n]) 
+			s5, c5 = np.sin(self.x[4, n]), np.cos(self.x[4, n]) 
 			
 			self.T01.append(np.array([
 				[c1, s1, self.left_foot[0, n]],
@@ -109,17 +111,27 @@ class Model(MathematicalProgram):
 							)
 			# print(self.T01)
 
-	def AddConstraints(self):
+	def SetConstraints(self):
 
 		def collocation(z):
-			q = z[0]
-			dq = z[1]
-			ddq = self.ComputeManipulators(q, dq)
+			ceq = []
+			q = [z[0], z[1], z[2], z[3], z[4]]
+			dq = [z[5], z[6], z[7], z[8], z[9]]
+			u = [z[10], z[11], z[12], z[13]]
+			ddq = self.ComputeManipulators(q, dq, u)
+			# print(ddq.shape)
+			ceq.extend([(dq[i] - ddq[i]) for i in range(len(q))])
+			# print(ceq)
+			# ceq.extend([(ddq[i] - dq[i]) for i in range(len(q))])
+			return np.array(ceq)
 
-		# for n in range(self.N):
-		self.prog.AddConstraint(self.collocation, lb=[0, 0], ub=[0, 0], vars=[x, dx])
+		for n in range(self.N):
+			self.prog.AddConstraint(collocation, lb=np.array([0]*5), ub=np.array([0]*5), 
+							vars=[self.x[0,n], self.x[1,n], self.x[2,n], self.x[3,n], self.x[4,n], 
+								self.dx[0,n], self.dx[1,n],self.dx[2,n],self.dx[3,n],self.dx[4,n],  
+								self.u[0,n], self.u[1,n], self.u[2,n], self.u[3,n]])
 
-	def ComputeManipulators(self, q, dq):
+	def ComputeManipulators(self, q, dq, u):
 		n = np.array([
 			self.l[0]*np.sum(self.m[1:]),
 			self.l[1]*np.sum(self.m[2:]),
@@ -129,23 +141,46 @@ class Model(MathematicalProgram):
 		])
 		p = np.array([
 			[			 self.i[0] + n[0]*self.l[0],                                      0,                                     0,                                       0,                          0],
-			[(self.m[0]*self.l[0] + n[0])*self.l[1],             self.i[1] + n[1]*self.l[1],                                     0,                                       0,                          0],
-			[(self.m[0]*self.l[0] + n[0])*self.l[2], (self.m[1]*self.l[1] + n[1])*self.l[2],             self.i[2] + n[2]*self.l[2],                                      0,                          0],
-			[(self.m[0]*self.l[0] + n[0])*self.l[3], (self.m[1]*self.l[1] + n[1])*self.l[3], (self.m[2]*self.l[2] + n[2])*self.l[3],             self.i[3] + n[3]*self.l[3],                          0],
-			[(self.m[0]*self.l[0] + n[0])*self.l[4], (self.m[1]*self.l[1] + n[1])*self.l[4], (self.m[2]*self.l[2] + n[2])*self.l[4], (self.m[3]*self.l[3] + n[3])*self.l[4], self.i[4] + n[4]*self.l[4]],
+			[(self.m[0]*self.l[0]/2 + n[0])*self.l[1],             self.i[1] + n[1]*self.l[1],                                     0,                                       0,                          0],
+			[(self.m[0]*self.l[0]/2 + n[0])*self.l[2], (self.m[1]*self.l[1]/2 + n[1])*self.l[2],             self.i[2] + n[2]*self.l[2],                                      0,                          0],
+			[(self.m[0]*self.l[0]/2 + n[0])*self.l[3], (self.m[1]*self.l[1]/2 + n[1])*self.l[3], (self.m[2]*self.l[2]/2 + n[2])*self.l[3],             self.i[3] + n[3]*self.l[3],                          0],
+			[(self.m[0]*self.l[0]/2 + n[0])*self.l[4], (self.m[1]*self.l[1]/2 + n[1])*self.l[4], (self.m[2]*self.l[2]/2 + n[2])*self.l[4], (self.m[3]*self.l[3]/2 + n[3])*self.l[4], self.i[4] + n[4]*self.l[4]],
 		])
-		q = np.array([
-			[],
-			[],
-			[],
-			[],
-			[]
-		])
+		asin = (np.array([
+			[np.sin(        0), np.sin(q[0]-q[1]), np.sin(q[0]-q[2]), np.sin(q[0]+q[3]), np.sin(q[0]+q[4])],
+			[np.sin(q[1]-q[0]), np.sin(        0), np.sin(q[1]-q[2]), np.sin(q[1]+q[3]), np.sin(q[1]+q[4])],
+			[np.sin(q[2]-q[0]), np.sin(q[2]-q[1]), np.sin(        0), np.sin(q[2]+q[3]), np.sin(q[2]+q[4])],
+			[np.sin(q[3]+q[0]), np.sin(q[3]+q[1]), np.sin(q[3]+q[2]), np.sin(        0), np.sin(q[3]-q[4])],
+			[np.sin(q[4]+q[0]), np.sin(q[4]+q[1]), np.sin(q[4]+q[2]), np.sin(q[4]-q[3]), np.sin(        0)]
+		]))
+		acos = (np.array([
+			[np.cos(        0), np.cos(q[0]-q[1]), np.cos(q[0]-q[2]), np.cos(q[0]+q[3]), np.cos(q[0]+q[4])],
+			[np.cos(q[1]-q[0]), np.cos(        0), np.cos(q[1]-q[2]), np.cos(q[1]+q[3]), np.cos(q[1]+q[4])],
+			[np.cos(q[2]-q[0]), np.cos(q[2]-q[1]), np.cos(        0), np.cos(q[2]+q[3]), np.cos(q[2]+q[4])],
+			[np.cos(q[3]+q[0]), np.cos(q[3]+q[1]), np.cos(q[3]+q[2]), np.cos(        0), np.cos(q[3]-q[4])],
+			[np.cos(q[4]+q[0]), np.cos(q[4]+q[1]), np.cos(q[4]+q[2]), np.cos(q[4]-q[3]), np.cos(        0)]
+		]))
+		g = np.array([
+			-(self.m[0]*self.l[0]/2 + n[0])*self.g,
+			-(self.m[1]*self.l[1]/2 + n[1])*self.g,
+			-(self.m[2]*self.l[2]/2 + n[2])*self.g,
+			(self.m[3]*self.l[3]/2 + n[3])*self.g,
+			(self.m[4]*self.l[4]/2 + n[4])*self.g
+		]).reshape(5, 1)
+		M = p*acos
+		C = p*asin
+		G = g*np.sin(q).reshape(5, 1)
+		T = np.array([0, u[0], u[1], u[2], u[3]]).reshape(5, 1)
+		ddq = pymath.inv(M) @ (T - G - (C @ (np.array(dq).reshape(5, 1)**2)))
+		return ddq
 
 f = Model()
+result = Solve(f.prog)
+assert(result.is_success()), "Optimization failed"
+
 print('u = ', f.u.shape, 'x = ', f.x.shape, 'dx = ', f.dx.shape)
 # def constraint_eval(z):
-#        p = pymath.cos(z)
+#        p = np.cos(z)
 #        return (1 - forwarddiff.derivative(p, z))
 
 # prog.AddConstraint(constraint_eval, lb=[0], ub=[0], vars=x)
