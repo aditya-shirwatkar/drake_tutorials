@@ -238,6 +238,7 @@ class Model(MathematicalProgram):
 		p5 = [self.l[4]*s5+p4[0], self.l[4]*c5+p4[1]]
 
 		return p1, p2, p3, p4, p5
+
 f = Model()
 
 result = Solve(f.prog)
